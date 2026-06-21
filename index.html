@@ -4,6 +4,30 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>handy</title>
+    <!-- Apply stored theme before React hydrates to prevent flash -->
+    <script>
+      try {
+        var t = localStorage.getItem('handy-theme');
+        var valid = ['neutral','slate','blue','teal','stone','custom'];
+        if (t && valid.indexOf(t) !== -1) {
+          document.documentElement.setAttribute('data-theme', t);
+          if (t === 'custom') {
+            // Apply saved custom colours immediately so there's no flash
+            var dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            var key  = dark ? 'handy-theme-custom-dark' : 'handy-theme-custom-light';
+            try {
+              var saved = JSON.parse(localStorage.getItem(key) || 'null');
+              if (saved) {
+                var r = document.documentElement;
+                r.style.setProperty('--color-logo-primary',  saved.primary);
+                r.style.setProperty('--color-logo-stroke',   saved.stroke);
+                r.style.setProperty('--color-background-ui', saved.bgUi);
+              }
+            } catch(e2) {}
+          }
+        }
+      } catch(e) {}
+    </script>
   </head>
 
   <body>

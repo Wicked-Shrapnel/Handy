@@ -1,4 +1,6 @@
 mod actions;
+mod app_state;
+mod terminal_detect;
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 mod apple_intelligence;
 mod audio_feedback;
@@ -164,6 +166,8 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(model_manager.clone());
     app_handle.manage(transcription_manager.clone());
     app_handle.manage(history_manager.clone());
+    // Shared runtime flags (skip-paste, terminal-formatting toggle, etc.)
+    app_handle.manage(crate::app_state::RuntimeFlags::new());
 
     // Note: Shortcuts are NOT initialized here.
     // The frontend is responsible for calling the `initialize_shortcuts` command
@@ -290,7 +294,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
         let _ = autostart_manager.disable();
     }
 
-    // Create the recording overlay window (hidden by default)
+    // Create the compact microphone-listening indicator (hidden by default).
     utils::create_recording_overlay(app_handle);
 }
 
@@ -415,6 +419,7 @@ pub fn run(cli_args: CliArgs) {
             commands::audio::set_clamshell_microphone,
             commands::audio::get_clamshell_microphone,
             commands::audio::is_recording,
+            commands::audio::set_terminal_formatting,
             commands::transcription::set_model_unload_timeout,
             commands::transcription::get_model_load_status,
             commands::transcription::unload_model_manually,

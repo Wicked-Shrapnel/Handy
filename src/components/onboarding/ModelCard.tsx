@@ -137,9 +137,7 @@ const ModelCard: React.FC<ModelCardProps> = ({
       <div className="flex justify-between items-center w-full">
         <div className="flex flex-col items-start flex-1 min-w-0">
           <div className="flex items-center gap-3 flex-wrap">
-            <h3
-              className={`text-base font-semibold text-text ${isClickable ? "group-hover:text-logo-primary" : ""} transition-colors`}
-            >
+            <h3 className="text-base font-semibold text-text">
               {displayName}
             </h3>
             {showRecommended && model.is_recommended && (
@@ -237,7 +235,7 @@ const ModelCard: React.FC<ModelCardProps> = ({
             size="sm"
             onClick={handleDelete}
             title={t("modelSelector.deleteModel", { modelName: displayName })}
-            className="flex items-center gap-1.5 text-logo-primary/85 hover:text-logo-primary hover:bg-logo-primary/10"
+            className="flex items-center gap-1.5 text-text/60 hover:text-text hover:bg-mid-gray/10 hover:border-mid-gray/30"
           >
             <Trash2 className="w-3.5 h-3.5" />
             <span>{t("common.delete")}</span>

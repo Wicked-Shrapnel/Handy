@@ -11,6 +11,8 @@ import { useSettings } from "../../../hooks/useSettings";
 import { VolumeSlider } from "../VolumeSlider";
 import { MuteWhileRecording } from "../MuteWhileRecording";
 import { ModelSettingsCard } from "./ModelSettingsCard";
+import { ThemeSelector } from "../ThemeSelector";
+import { TerminalSettings } from "../TerminalSettings";
 
 export const GeneralSettings: React.FC = () => {
   const { t } = useTranslation();
@@ -28,6 +30,12 @@ export const GeneralSettings: React.FC = () => {
         )}
       </SettingsGroup>
       <ModelSettingsCard />
+      <SettingsGroup title="Appearance">
+        <ThemeSelector grouped={true} />
+      </SettingsGroup>
+      <SettingsGroup title="Terminal">
+        <TerminalSettings grouped={true} />
+      </SettingsGroup>
       <SettingsGroup title={t("settings.sound.title")}>
         <MicrophoneSelector descriptionMode="tooltip" grouped={true} />
         <MuteWhileRecording descriptionMode="tooltip" grouped={true} />

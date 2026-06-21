@@ -106,3 +106,92 @@
   stroke: var(--color-logo-stroke);
   stroke-width: 1;
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+
+/* ═══════════════════════════════════════════════════════════════════
+ * THEME COLOR SYSTEM
+ * Applied via data-theme="<id>" on :root (set by useTheme hook).
+ * For preset themes: CSS handles both light and dark mode.
+ * For "custom" theme: JS sets --color-logo-primary / stroke / bg-ui
+ *   as inline styles on :root, which take precedence over these rules.
+ * ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Neutral ────────────────────────────────────────────────────── */
+:root[data-theme="neutral"] {
+  --color-logo-primary:  #a1a1aa;
+  --color-logo-stroke:   #27272a;
+  --color-background-ui: #71717a;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="neutral"] {
+    --color-logo-primary:  #a1a1aa;
+    --color-logo-stroke:   #e4e4e7;
+    --color-background-ui: #52525b;
+  }
+}
+
+/* ── Slate ──────────────────────────────────────────────────────── */
+:root[data-theme="slate"] {
+  --color-logo-primary:  #94a3b8;
+  --color-logo-stroke:   #1e293b;
+  --color-background-ui: #64748b;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="slate"] {
+    --color-logo-primary:  #94a3b8;
+    --color-logo-stroke:   #e2e8f0;
+    --color-background-ui: #475569;
+  }
+}
+
+/* ── Blue ───────────────────────────────────────────────────────── */
+:root[data-theme="blue"] {
+  --color-logo-primary:  #93c5fd;
+  --color-logo-stroke:   #1e3a5f;
+  --color-background-ui: #3b82f6;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="blue"] {
+    --color-logo-primary:  #60a5fa;
+    --color-logo-stroke:   #bfdbfe;
+    --color-background-ui: #2563eb;
+  }
+}
+
+/* ── Teal ───────────────────────────────────────────────────────── */
+:root[data-theme="teal"] {
+  --color-logo-primary:  #5eead4;
+  --color-logo-stroke:   #134e4a;
+  --color-background-ui: #14b8a6;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="teal"] {
+    --color-logo-primary:  #2dd4bf;
+    --color-logo-stroke:   #ccfbf1;
+    --color-background-ui: #0d9488;
+  }
+}
+
+/* ── Stone ──────────────────────────────────────────────────────── */
+:root[data-theme="stone"] {
+  --color-logo-primary:  #a8a29e;
+  --color-logo-stroke:   #292524;
+  --color-background-ui: #78716c;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="stone"] {
+    --color-logo-primary:  #a8a29e;
+    --color-logo-stroke:   #e7e5e4;
+    --color-background-ui: #57534e;
+  }
+}
+
+/* ── Custom ─────────────────────────────────────────────────────── */
+/* JS sets --color-logo-primary / stroke / bg-ui as inline styles.
+   This block only provides a fallback if JS hasn't run yet. */
+:root[data-theme="custom"] {
+  --color-logo-primary:  var(--color-logo-primary,  #6366f1);
+  --color-logo-stroke:   var(--color-logo-stroke,   #1e1b4b);
+  --color-background-ui: var(--color-background-ui, #4f46e5);
+}

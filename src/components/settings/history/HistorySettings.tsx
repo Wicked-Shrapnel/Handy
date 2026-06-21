@@ -1,7 +1,27 @@
+/**
+ * HistorySettings (forked — adds voice playback per entry + voice selector)
+ *
+ * Changes from upstream:
+ *  1. Voice selector dropdown in the section header lets the user pick any
+ *     installed TTS voice (populated from speechSynthesis.getVoices()).
+ *  2. Each history entry gains a speaker button that reads its transcription
+ *     aloud using the selected voice with word-level highlighting.
+ *  3. The button toggles to a stop icon when that entry is currently playing.
+ */
+
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { readFile } from "@tauri-apps/plugin-fs";
-import { Check, Copy, FolderOpen, RotateCcw, Star, Trash2 } from "lucide-react";
+import {
+  Check,
+  Copy,
+  FolderOpen,
+  RotateCcw,
+  Star,
+  Trash2,
+  Volume2,
+  VolumeX,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
@@ -14,7 +34,10 @@ import { useOsType } from "@/hooks/useOsType";
 import { formatDateTime } from "@/utils/dateFormat";
 import { AudioPlayer } from "../../ui/AudioPlayer";
 import { Button } from "../../ui/Button";
+import { Dropdown } from "../../ui/Dropdown";
+import { useTTSContext } from "@/contexts/TTSContext";
 
+/* ─── Shared icon-button ───────────────────────────────────────── */
 const IconButton: React.FC<{
   onClick: () => void;
   title: string;
@@ -37,7 +60,9 @@ const IconButton: React.FC<{
 );
 
 const PAGE_SIZE = 30;
+type PlaybackMode = "ai" | "user";
 
+/* ─── Open recordings folder button ────────────────────────────── */
 interface OpenRecordingsButtonProps {
   onClick: () => void;
   label: string;
@@ -59,17 +84,59 @@ const OpenRecordingsButton: React.FC<OpenRecordingsButtonProps> = ({
   </Button>
 );
 
+/* ─── Voice selector ────────────────────────────────────────────── */
+/**
+ * Builds a flat list of Dropdown options from the available voices,
+ * prefixed with a "(Default voice)" entry.
+ *
+ * Voices are grouped loosely by marking local (offline) voices with a
+ * 📶⊘ badge so users can tell them apart from network voices.
+ */
+const NONE_VALUE = "__none__";
+
+const VoiceSelector: React.FC = () => {
+  const { availableVoices, selectedVoiceURI, setSelectedVoiceURI } =
+    useTTSContext();
+
+  if (availableVoices.length === 0) {
+    // Either not loaded yet or API unavailable — render nothing.
+    return null;
+  }
+
+  const options = [
+    { value: NONE_VALUE, label: "Default voice" },
+    ...availableVoices.map((v) => ({
+      value: v.voiceURI,
+      // Format: "Samantha  (en-US)"  or  "Samantha ○ (en-US)" for online
+      label: `${v.isLocal ? "" : "⬡ "}${v.name} (${v.lang})${v.isDefault ? " ★" : ""}`,
+    })),
+  ];
+
+  return (
+    <Dropdown
+      options={options}
+      selectedValue={selectedVoiceURI ?? NONE_VALUE}
+      onSelect={(val) =>
+        setSelectedVoiceURI(val === NONE_VALUE ? null : val)
+      }
+      placeholder="Default voice"
+      className="w-64"
+    />
+  );
+};
+
+/* ─── Main settings component ───────────────────────────────────── */
 export const HistorySettings: React.FC = () => {
   const { t } = useTranslation();
   const osType = useOsType();
   const [entries, setEntries] = useState<HistoryEntry[]>([]);
+  const [playbackMode, setPlaybackMode] = useState<PlaybackMode>("user");
   const [loading, setLoading] = useState(true);
   const [hasMore, setHasMore] = useState(true);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const entriesRef = useRef<HistoryEntry[]>([]);
   const loadingRef = useRef(false);
 
-  // Keep ref in sync for use in IntersectionObserver callback
   useEffect(() => {
     entriesRef.current = entries;
   }, [entries]);
@@ -78,14 +145,9 @@ export const HistorySettings: React.FC = () => {
     const isFirstPage = cursor === undefined;
     if (!isFirstPage && loadingRef.current) return;
     loadingRef.current = true;
-
     if (isFirstPage) setLoading(true);
-
     try {
-      const result = await commands.getHistoryEntries(
-        cursor ?? null,
-        PAGE_SIZE,
-      );
+      const result = await commands.getHistoryEntries(cursor ?? null, PAGE_SIZE);
       if (result.status === "ok") {
         const { entries: newEntries, has_more } = result.data;
         setEntries((prev) =>
@@ -101,36 +163,25 @@ export const HistorySettings: React.FC = () => {
     }
   }, []);
 
-  // Initial load
-  useEffect(() => {
-    loadPage();
-  }, [loadPage]);
+  useEffect(() => { loadPage(); }, [loadPage]);
 
-  // Infinite scroll via IntersectionObserver
   useEffect(() => {
     if (loading) return;
-
     const sentinel = sentinelRef.current;
     if (!sentinel || !hasMore) return;
-
     const observer = new IntersectionObserver(
       (observerEntries) => {
-        const first = observerEntries[0];
-        if (first.isIntersecting) {
-          const lastEntry = entriesRef.current[entriesRef.current.length - 1];
-          if (lastEntry) {
-            loadPage(lastEntry.id);
-          }
+        if (observerEntries[0].isIntersecting) {
+          const last = entriesRef.current[entriesRef.current.length - 1];
+          if (last) loadPage(last.id);
         }
       },
       { threshold: 0 },
     );
-
     observer.observe(sentinel);
     return () => observer.disconnect();
   }, [loading, hasMore, loadPage]);
 
-  // Listen for new entries added from the transcription pipeline
   useEffect(() => {
     const unlisten = events.historyUpdatePayload.listen((event) => {
       const payload: HistoryUpdatePayload = event.payload;
@@ -141,31 +192,22 @@ export const HistorySettings: React.FC = () => {
           prev.map((e) => (e.id === payload.entry.id ? payload.entry : e)),
         );
       }
-      // "deleted" and "toggled" are handled by optimistic updates only,
-      // so we intentionally ignore them here to avoid double-mutation.
     });
-
-    return () => {
-      unlisten.then((fn) => fn());
-    };
+    return () => { unlisten.then((fn) => fn()); };
   }, []);
 
   const toggleSaved = async (id: number) => {
-    // Optimistic update
     setEntries((prev) =>
       prev.map((e) => (e.id === id ? { ...e, saved: !e.saved } : e)),
     );
     try {
       const result = await commands.toggleHistoryEntrySaved(id);
       if (result.status !== "ok") {
-        // Revert on failure
         setEntries((prev) =>
           prev.map((e) => (e.id === id ? { ...e, saved: !e.saved } : e)),
         );
       }
-    } catch (error) {
-      console.error("Failed to toggle saved status:", error);
-      // Revert on failure
+    } catch {
       setEntries((prev) =>
         prev.map((e) => (e.id === id ? { ...e, saved: !e.saved } : e)),
       );
@@ -193,8 +235,7 @@ export const HistorySettings: React.FC = () => {
           return convertFileSrc(result.data, "asset");
         }
         return null;
-      } catch (error) {
-        console.error("Failed to get audio file path:", error);
+      } catch {
         return null;
       }
     },
@@ -202,33 +243,24 @@ export const HistorySettings: React.FC = () => {
   );
 
   const deleteAudioEntry = async (id: number) => {
-    // Optimistically remove
     setEntries((prev) => prev.filter((e) => e.id !== id));
     try {
       const result = await commands.deleteHistoryEntry(id);
-      if (result.status !== "ok") {
-        // Reload on failure
-        loadPage();
-      }
-    } catch (error) {
-      console.error("Failed to delete entry:", error);
+      if (result.status !== "ok") loadPage();
+    } catch {
       loadPage();
     }
   };
 
   const retryHistoryEntry = async (id: number) => {
     const result = await commands.retryHistoryEntryTranscription(id);
-    if (result.status !== "ok") {
-      throw new Error(String(result.error));
-    }
+    if (result.status !== "ok") throw new Error(String(result.error));
   };
 
   const openRecordingsFolder = async () => {
     try {
       const result = await commands.openRecordingsFolder();
-      if (result.status !== "ok") {
-        throw new Error(String(result.error));
-      }
+      if (result.status !== "ok") throw new Error(String(result.error));
     } catch (error) {
       console.error("Failed to open recordings folder:", error);
     }
@@ -261,10 +293,10 @@ export const HistorySettings: React.FC = () => {
               getAudioUrl={getAudioUrl}
               deleteAudio={deleteAudioEntry}
               retryTranscription={retryHistoryEntry}
+              playbackMode={playbackMode}
             />
           ))}
         </div>
-        {/* Sentinel for infinite scroll */}
         <div ref={sentinelRef} className="h-1" />
       </>
     );
@@ -273,17 +305,35 @@ export const HistorySettings: React.FC = () => {
   return (
     <div className="max-w-3xl w-full mx-auto space-y-6">
       <div className="space-y-2">
-        <div className="px-4 flex items-center justify-between">
+        {/* ── Header row ─────────────────────────────────────────── */}
+        <div className="px-4 flex flex-col items-stretch gap-3">
           <div>
             <h2 className="text-xs font-medium text-mid-gray uppercase tracking-wide">
               {t("settings.history.title")}
             </h2>
           </div>
-          <OpenRecordingsButton
-            onClick={openRecordingsFolder}
-            label={t("settings.history.openFolder")}
-          />
+
+          {/* Right side: playback controls + folder button */}
+          <div className="flex flex-col items-end gap-3">
+            <div className="flex flex-col items-end gap-2">
+              <Dropdown
+                options={[
+                  { value: "user", label: "User voice" },
+                  { value: "ai", label: "AI voice" },
+                ]}
+                selectedValue={playbackMode}
+                onSelect={(value) => setPlaybackMode(value as PlaybackMode)}
+                className="w-64"
+              />
+              {playbackMode === "ai" && <VoiceSelector />}
+            </div>
+            <OpenRecordingsButton
+              onClick={openRecordingsFolder}
+              label={t("settings.history.openFolder")}
+            />
+          </div>
         </div>
+
         <div className="bg-background border border-mid-gray/20 rounded-lg overflow-visible">
           {content}
         </div>
@@ -292,6 +342,7 @@ export const HistorySettings: React.FC = () => {
   );
 };
 
+/* ─── History entry ─────────────────────────────────────────────── */
 interface HistoryEntryProps {
   entry: HistoryEntry;
   onToggleSaved: () => void;
@@ -299,6 +350,7 @@ interface HistoryEntryProps {
   getAudioUrl: (fileName: string) => Promise<string | null>;
   deleteAudio: (id: number) => Promise<void>;
   retryTranscription: (id: number) => Promise<void>;
+  playbackMode: PlaybackMode;
 }
 
 const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
@@ -308,12 +360,29 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
   getAudioUrl,
   deleteAudio,
   retryTranscription,
+  playbackMode,
 }) => {
   const { t, i18n } = useTranslation();
   const [showCopied, setShowCopied] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const { speak, stop, state: ttsState } = useTTSContext();
 
   const hasTranscription = entry.transcription_text.trim().length > 0;
+
+  /**
+   * Is THIS entry currently being read aloud?
+   * We compare the TTS text against the entry's transcription to determine
+   * which play button to highlight.
+   */
+  const isThisEntryPlaying =
+    (ttsState.isSpeaking || ttsState.isPaused) &&
+    ttsState.text === entry.transcription_text.trim();
+
+  useEffect(() => {
+    if (playbackMode !== "ai" && isThisEntryPlaying) {
+      stop();
+    }
+  }, [isThisEntryPlaying, playbackMode, stop]);
 
   const handleLoadAudio = useCallback(
     () => getAudioUrl(entry.file_name),
@@ -321,10 +390,7 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
   );
 
   const handleCopyText = () => {
-    if (!hasTranscription) {
-      return;
-    }
-
+    if (!hasTranscription) return;
     onCopyText();
     setShowCopied(true);
     setTimeout(() => setShowCopied(false), 2000);
@@ -333,8 +399,7 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
   const handleDeleteEntry = async () => {
     try {
       await deleteAudio(entry.id);
-    } catch (error) {
-      console.error("Failed to delete entry:", error);
+    } catch {
       toast.error(t("settings.history.deleteError"));
     }
   };
@@ -343,11 +408,19 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
     try {
       setRetrying(true);
       await retryTranscription(entry.id);
-    } catch (error) {
-      console.error("Failed to re-transcribe:", error);
+    } catch {
       toast.error(t("settings.history.retranscribeError"));
     } finally {
       setRetrying(false);
+    }
+  };
+
+  /** Toggle play/stop for this entry. */
+  const handlePlayVoice = () => {
+    if (isThisEntryPlaying) {
+      stop();
+    } else if (hasTranscription) {
+      speak(entry.transcription_text.trim());
     }
   };
 
@@ -357,7 +430,29 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
     <div className="px-4 py-2 pb-5 flex flex-col gap-3">
       <div className="flex justify-between items-center">
         <p className="text-sm font-medium">{formattedDate}</p>
+
         <div className="flex items-center">
+          {/* ── Play / Stop with voice ─────────────────────────── */}
+          {playbackMode === "ai" && (
+            <IconButton
+              onClick={handlePlayVoice}
+              disabled={!hasTranscription || retrying}
+              active={isThisEntryPlaying}
+              title={
+                isThisEntryPlaying
+                  ? t("settings.history.stopVoice", { defaultValue: "Stop reading" })
+                  : t("settings.history.playVoice", { defaultValue: "Read aloud" })
+              }
+            >
+              {isThisEntryPlaying ? (
+                <VolumeX width={16} height={16} />
+              ) : (
+                <Volume2 width={16} height={16} />
+              )}
+            </IconButton>
+          )}
+
+          {/* ── Existing buttons (unchanged) ──────────────────── */}
           <IconButton
             onClick={handleCopyText}
             disabled={!hasTranscription || retrying}
@@ -428,7 +523,7 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
           <style>{`
             @keyframes transcribe-pulse {
               0%, 100% { color: color-mix(in srgb, var(--color-text) 40%, transparent); }
-              50% { color: color-mix(in srgb, var(--color-text) 90%, transparent); }
+              50%       { color: color-mix(in srgb, var(--color-text) 90%, transparent); }
             }
           `}</style>
         )}
@@ -439,7 +534,9 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
             : t("settings.history.transcriptionFailed")}
       </p>
 
-      <AudioPlayer onLoadRequest={handleLoadAudio} className="w-full" />
+      {playbackMode === "user" && (
+        <AudioPlayer onLoadRequest={handleLoadAudio} className="w-full" />
+      )}
     </div>
   );
 };

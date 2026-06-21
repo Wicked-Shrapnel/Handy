@@ -319,41 +319,6 @@ pub fn create_recording_overlay(app_handle: &AppHandle) {
     }
 }
 
-fn show_overlay_state(app_handle: &AppHandle, state: &str) {
-    // Check if overlay should be shown based on position setting
-    let settings = settings::get_settings(app_handle);
-    if settings.overlay_position == OverlayPosition::None {
-        return;
-    }
-
-    update_overlay_position(app_handle);
-
-    if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
-        let _ = overlay_window.show();
-
-        // On Windows, aggressively re-assert "topmost" in the native Z-order after showing
-        #[cfg(target_os = "windows")]
-        force_overlay_topmost(&overlay_window);
-
-        let _ = overlay_window.emit("show-overlay", state);
-    }
-}
-
-/// Shows the recording overlay window with fade-in animation
-pub fn show_recording_overlay(app_handle: &AppHandle) {
-    show_overlay_state(app_handle, "recording");
-}
-
-/// Shows the transcribing overlay window
-pub fn show_transcribing_overlay(app_handle: &AppHandle) {
-    show_overlay_state(app_handle, "transcribing");
-}
-
-/// Shows the processing overlay window
-pub fn show_processing_overlay(app_handle: &AppHandle) {
-    show_overlay_state(app_handle, "processing");
-}
-
 /// Updates the overlay window position based on current settings
 pub fn update_overlay_position(app_handle: &AppHandle) {
     if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
@@ -367,6 +332,28 @@ pub fn update_overlay_position(app_handle: &AppHandle) {
                 .set_position(tauri::Position::Logical(tauri::LogicalPosition { x, y }));
         }
     }
+}
+
+fn show_overlay_state(app_handle: &AppHandle, state: &str) {
+    update_overlay_position(app_handle);
+    if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
+        let _ = overlay_window.show();
+        #[cfg(target_os = "windows")]
+        force_overlay_topmost(&overlay_window);
+        let _ = overlay_window.emit("show-overlay", state);
+    }
+}
+
+pub fn show_recording_overlay(app_handle: &AppHandle) {
+    show_overlay_state(app_handle, "recording");
+}
+
+pub fn show_transcribing_overlay(app_handle: &AppHandle) {
+    show_overlay_state(app_handle, "transcribing");
+}
+
+pub fn show_processing_overlay(app_handle: &AppHandle) {
+    show_overlay_state(app_handle, "processing");
 }
 
 /// Hides the recording overlay window with fade-out animation

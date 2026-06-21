@@ -8,9 +8,7 @@ use crate::managers::transcription::TranscriptionManager;
 use crate::settings::{get_settings, AppSettings, APPLE_INTELLIGENCE_PROVIDER_ID};
 use crate::shortcut;
 use crate::tray::{change_tray_icon, TrayIconState};
-use crate::utils::{
-    self, show_processing_overlay, show_recording_overlay, show_transcribing_overlay,
-};
+use crate::utils;
 use crate::TranscriptionCoordinator;
 use ferrous_opencc::{config::BuiltinConfig, OpenCC};
 use log::{debug, error, warn};
@@ -405,8 +403,13 @@ impl ShortcutAction for TranscribeAction {
         });
 
         let binding_id = binding_id.to_string();
+        let is_terminal = crate::terminal_detect::is_terminal_focused();
+        if let Some(flags) =
+            app.try_state::<std::sync::Arc<crate::app_state::RuntimeFlags>>()
+        {
+            flags.set_terminal_target(is_terminal);
+        }
         change_tray_icon(app, TrayIconState::Recording);
-        show_recording_overlay(app);
 
         // Get the microphone mode to determine audio feedback timing
         let settings = get_settings(app);
@@ -458,6 +461,7 @@ impl ShortcutAction for TranscribeAction {
         }
 
         if recording_error.is_none() {
+            utils::show_recording_overlay(app);
             // Dynamically register the cancel shortcut in a separate task to avoid deadlock
             shortcut::register_cancel_shortcut(app);
         } else {
@@ -502,7 +506,7 @@ impl ShortcutAction for TranscribeAction {
         let hm = Arc::clone(&app.state::<Arc<HistoryManager>>());
 
         change_tray_icon(app, TrayIconState::Transcribing);
-        show_transcribing_overlay(app);
+        utils::show_transcribing_overlay(app);
 
         // Unmute before playing audio feedback so the stop sound is audible
         rm.remove_mute();
@@ -580,7 +584,7 @@ impl ShortcutAction for TranscribeAction {
                             );
 
                             if post_process {
-                                show_processing_overlay(&ah);
+                                utils::show_processing_overlay(&ah);
                             }
                             let processed =
                                 process_transcription_output(&ah, &transcription, post_process)
@@ -603,9 +607,33 @@ impl ShortcutAction for TranscribeAction {
                                 utils::hide_recording_overlay(&ah);
                                 change_tray_icon(&ah, TrayIconState::Idle);
                             } else {
+                                let flags = ah
+                                    .try_state::<std::sync::Arc<crate::app_state::RuntimeFlags>>();
+
                                 let ah_clone = ah.clone();
                                 let paste_time = Instant::now();
-                                let final_text = processed.final_text;
+
+                                // Apply terminal formatting when the focused window
+                                // is a terminal emulator (and the feature is enabled).
+                                let terminal_fmt = flags
+                                    .as_ref()
+                                    .map(|f| f.terminal_formatting_enabled())
+                                    .unwrap_or(false);
+
+                                let terminal_target = flags
+                                    .as_ref()
+                                    .map(|f| f.terminal_target_active())
+                                    .unwrap_or(false)
+                                    || crate::terminal_detect::is_terminal_focused();
+
+                                let final_text = if terminal_fmt && terminal_target {
+                                    crate::terminal_detect::format_for_terminal(
+                                        &processed.final_text,
+                                    )
+                                } else {
+                                    processed.final_text
+                                };
+
                                 ah.run_on_main_thread(move || {
                                     match utils::paste(final_text, ah_clone.clone()) {
                                         Ok(()) => debug!(

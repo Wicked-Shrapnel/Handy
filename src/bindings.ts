@@ -726,6 +726,9 @@ async getClamshellMicrophone() : Promise<Result<string, string>> {
 async isRecording() : Promise<boolean> {
     return await TAURI_INVOKE("is_recording");
 },
+async setTerminalFormatting(enabled: boolean) : Promise<void> {
+    await TAURI_INVOKE("set_terminal_formatting", { enabled });
+},
 async setModelUnloadTimeout(timeout: ModelUnloadTimeout) : Promise<void> {
     await TAURI_INVOKE("set_model_unload_timeout", { timeout });
 },

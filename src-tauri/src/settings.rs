@@ -187,11 +187,13 @@ impl Default for ModelUnloadTimeout {
 
 impl Default for PasteMethod {
     fn default() -> Self {
-        // Default to CtrlV for macOS and Windows, Direct for Linux
-        #[cfg(target_os = "linux")]
-        return PasteMethod::Direct;
-        #[cfg(not(target_os = "linux"))]
-        return PasteMethod::CtrlV;
+        // FORK CHANGE: Default to Direct on ALL platforms (was CtrlV on
+        // macOS/Windows). Direct uses enigo's `text()` method to simulate
+        // keystrokes — it never reads or writes the system clipboard.
+        // Users who specifically want clipboard-based paste (e.g. for an
+        // app that doesn't accept synthetic keystrokes) can still switch
+        // back to "Clipboard (Ctrl+V)" in Settings → Advanced → Paste Method.
+        PasteMethod::Direct
     }
 }
 

@@ -310,3 +310,15 @@ pub fn is_recording(app: AppHandle) -> bool {
     let audio_manager = app.state::<Arc<AudioRecordingManager>>();
     audio_manager.is_recording()
 }
+
+/// Enable or disable auto terminal-mode formatting.
+/// When enabled (default), pasting/injecting into a terminal strips
+/// capitalisation and trailing punctuation automatically.
+#[tauri::command]
+#[specta::specta]
+pub fn set_terminal_formatting(enabled: bool, app: AppHandle) {
+    use crate::app_state::RuntimeFlags;
+    if let Some(flags) = app.try_state::<std::sync::Arc<RuntimeFlags>>() {
+        flags.set_terminal_formatting(enabled);
+    }
+}

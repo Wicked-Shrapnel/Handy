@@ -258,7 +258,7 @@ const PostProcessingSettingsPromptsComponent: React.FC = () => {
       grouped={true}
     >
       <div className="space-y-3">
-        <div className="flex gap-2 min-w-0">
+        <div className="flex gap-2">
           <Dropdown
             selectedValue={selectedPromptId || null}
             options={prompts.map((p) => ({
@@ -274,14 +274,13 @@ const PostProcessingSettingsPromptsComponent: React.FC = () => {
             disabled={
               isUpdating("post_process_selected_prompt_id") || isCreating
             }
-            className="flex-1 min-w-0"
+            className="flex-1"
           />
           <Button
             onClick={handleStartCreate}
             variant="primary"
             size="md"
             disabled={isCreating}
-            className="shrink-0"
           >
             {t("settings.postProcessing.prompts.createNew")}
           </Button>

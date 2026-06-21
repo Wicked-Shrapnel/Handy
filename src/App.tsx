@@ -1,3 +1,12 @@
+/**
+ * App.tsx (forked — adds TTS provider, TTSReader panel, and ContextMenu)
+ *
+ * New features wired in here:
+ *  1. <TTSProvider>  — makes speak() / stop() available app-wide
+ *  2. <TTSReader>    — floating bottom panel with word-highlighted read-aloud
+ *  3. <ContextMenu>  — right-click "Read Aloud" for any selected text
+ */
+
 import { useEffect, useState, useRef } from "react";
 import { toast, Toaster } from "sonner";
 import { useTranslation } from "react-i18next";
@@ -18,6 +27,12 @@ import { useSettingsStore } from "./stores/settingsStore";
 import { commands } from "@/bindings";
 import { getLanguageDirection, initializeRTL } from "@/lib/utils/rtl";
 
+// ── New TTS / context-menu imports ────────────────────────────────
+import { TTSProvider } from "@/contexts/TTSContext";
+import { TTSReader } from "@/components/TTSReader";
+import { ContextMenu } from "@/components/ContextMenu";
+// ─────────────────────────────────────────────────────────────────
+
 type OnboardingStep = "accessibility" | "model" | "done";
 
 const renderSettingsContent = (section: SidebarSection) => {
@@ -26,13 +41,12 @@ const renderSettingsContent = (section: SidebarSection) => {
   return <ActiveComponent />;
 };
 
-function App() {
+/* ── Inner app — needs access to TTSContext ───────────────────── */
+function AppInner() {
   const { t, i18n } = useTranslation();
   const [onboardingStep, setOnboardingStep] = useState<OnboardingStep | null>(
     null,
   );
-  // Track if this is a returning user who just needs to grant permissions
-  // (vs a new user who needs full onboarding including model selection)
   const [isReturningUser, setIsReturningUser] = useState(false);
   const [currentSection, setCurrentSection] =
     useState<SidebarSection>("general");
@@ -50,12 +64,10 @@ function App() {
     checkOnboardingStatus();
   }, []);
 
-  // Initialize RTL direction when language changes
   useEffect(() => {
     initializeRTL(i18n.language);
   }, [i18n.language]);
 
-  // Initialize Enigo, shortcuts, and refresh audio devices when main app loads
   useEffect(() => {
     if (onboardingStep === "done" && !hasCompletedPostOnboardingInit.current) {
       hasCompletedPostOnboardingInit.current = true;
@@ -70,10 +82,8 @@ function App() {
     }
   }, [onboardingStep, refreshAudioDevices, refreshOutputDevices]);
 
-  // Handle keyboard shortcuts for debug mode toggle
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      // Check for Ctrl+Shift+D (Windows/Linux) or Cmd+Shift+D (macOS)
       const isDebugShortcut =
         event.shiftKey &&
         event.key.toLowerCase() === "d" &&
@@ -86,16 +96,10 @@ function App() {
       }
     };
 
-    // Add event listener when component mounts
     document.addEventListener("keydown", handleKeyDown);
-
-    // Cleanup event listener when component unmounts
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown);
-    };
+    return () => document.removeEventListener("keydown", handleKeyDown);
   }, [settings?.debug_mode, updateSetting]);
 
-  // Listen for recording errors from the backend and show a toast
   useEffect(() => {
     const unlisten = listen<RecordingErrorEvent>("recording-error", (event) => {
       const { error_type, detail } = event.payload;
@@ -117,27 +121,18 @@ function App() {
         );
       }
     });
-    return () => {
-      unlisten.then((fn) => fn());
-    };
+    return () => { unlisten.then((fn) => fn()); };
   }, [t]);
 
-  // Listen for paste failures and show a toast.
-  // The technical error detail is logged to handy.log on the Rust side
-  // (see actions.rs `error!("Failed to paste transcription: ...")`),
-  // so we show a localized, user-friendly message here instead of the raw error.
   useEffect(() => {
     const unlisten = listen("paste-error", () => {
       toast.error(t("errors.pasteFailedTitle"), {
         description: t("errors.pasteFailed"),
       });
     });
-    return () => {
-      unlisten.then((fn) => fn());
-    };
+    return () => { unlisten.then((fn) => fn()); };
   }, [t]);
 
-  // Listen for model loading failures and show a toast
   useEffect(() => {
     const unlisten = listen<ModelStateEvent>("model-state-changed", (event) => {
       if (event.payload.event_type === "loading_failed") {
@@ -146,15 +141,11 @@ function App() {
             model:
               event.payload.model_name || t("errors.modelLoadFailedUnknown"),
           }),
-          {
-            description: event.payload.error,
-          },
+          { description: event.payload.error },
         );
       }
     });
-    return () => {
-      unlisten.then((fn) => fn());
-    };
+    return () => { unlisten.then((fn) => fn()); };
   }, [t]);
 
   const revealMainWindowForPermissions = async () => {
@@ -167,13 +158,11 @@ function App() {
 
   const checkOnboardingStatus = async () => {
     try {
-      // Check if they have any models available
       const result = await commands.hasAnyModelsAvailable();
       const hasModels = result.status === "ok" && result.data;
       const currentPlatform = platform();
 
       if (hasModels) {
-        // Returning user - check if they need to grant permissions first
         setIsReturningUser(true);
 
         if (currentPlatform === "macos") {
@@ -189,7 +178,6 @@ function App() {
             }
           } catch (e) {
             console.warn("Failed to check macOS permissions:", e);
-            // If we can't check, proceed to main app and let them fix it there
           }
         }
 
@@ -207,13 +195,11 @@ function App() {
             }
           } catch (e) {
             console.warn("Failed to check Windows microphone permissions:", e);
-            // If we can't check, proceed to main app and let them fix it there
           }
         }
 
         setOnboardingStep("done");
       } else {
-        // New user - start full onboarding
         setIsReturningUser(false);
         setOnboardingStep("accessibility");
       }
@@ -224,20 +210,14 @@ function App() {
   };
 
   const handleAccessibilityComplete = () => {
-    // Returning users already have models, skip to main app
-    // New users need to select a model
     setOnboardingStep(isReturningUser ? "done" : "model");
   };
 
   const handleModelSelected = () => {
-    // Transition to main app - user has started a download
     setOnboardingStep("done");
   };
 
-  // Still checking onboarding status
-  if (onboardingStep === null) {
-    return null;
-  }
+  if (onboardingStep === null) return null;
 
   if (onboardingStep === "accessibility") {
     return <AccessibilityOnboarding onComplete={handleAccessibilityComplete} />;
@@ -264,13 +244,13 @@ function App() {
           },
         }}
       />
-      {/* Main content area that takes remaining space */}
+
+      {/* Main content */}
       <div className="flex-1 flex overflow-hidden">
         <Sidebar
           activeSection={currentSection}
           onSectionChange={setCurrentSection}
         />
-        {/* Scrollable content area */}
         <div className="flex-1 flex flex-col overflow-hidden">
           <div className="flex-1 overflow-y-auto">
             <div className="flex flex-col items-center p-4 gap-4">
@@ -280,9 +260,24 @@ function App() {
           </div>
         </div>
       </div>
-      {/* Fixed footer at bottom */}
+
       <Footer />
+
+      {/* ── TTS reader panel (floats above footer) ─────────────── */}
+      <TTSReader />
+
+      {/* ── Right-click context menu ────────────────────────────── */}
+      <ContextMenu />
     </div>
+  );
+}
+
+/* ── Root — wraps everything in the TTS context ───────────────── */
+function App() {
+  return (
+    <TTSProvider>
+      <AppInner />
+    </TTSProvider>
   );
 }
 
